@@ -140,7 +140,7 @@ void fill_bmp_header(bmp_header_t *bmp_header, int image_descriptor, struct stat
     get_permissions(stats, bmp_header);
 }
 
-void print_details(bmp_header_t bmp_header) 
+char *create_buffer(bmp_header_t bmp_header) 
 {
     char *buffer = (char *)malloc(200 * sizeof(char));
     sprintf(buffer, "nume fisier: %s\ninaltime: %d\nlungime: %d\ndimensiune: %d\nidentificatorul utilizatorului: %d\ntimpul ultimei modificari: %10s\ncontorul de legaturi: %d\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
@@ -155,7 +155,7 @@ void print_details(bmp_header_t bmp_header)
         bmp_header.group_rights,
         bmp_header.others_rights
 );
-    printf("%s", buffer);
+    return buffer;
 }
 
 void write_statistics_to_file(const char *file_name, const char *metadata) {
@@ -195,7 +195,9 @@ int main(int argc, char *argv[])
 
     fill_bmp_header(&bmp_header, file_descriptor, &stats);
 
-    print_details(bmp_header);
+    char *buffer = create_buffer(bmp_header);
+    write_statistics_to_file("statistica.txt", create_buffer(bmp_header));
+    free(buffer);
 
     close_file(file_descriptor);
 
