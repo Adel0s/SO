@@ -6,8 +6,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+#include <dirent.h>
 
-typedef struct bmp_header_t {
+typedef struct bmp_header_t
+{
     char file_name[100];
     int height;
     int width;
@@ -18,9 +20,9 @@ typedef struct bmp_header_t {
     char user_rights[4];
     char group_rights[4];
     char others_rights[4];
-}bmp_header_t;
+} bmp_header_t;
 
-int open_file(const char *pathname, int o_flags) 
+int open_file(const char *pathname, int o_flags)
 {
     int file_descriptor = open(pathname, o_flags);
     if (file_descriptor < 0)
@@ -32,7 +34,7 @@ int open_file(const char *pathname, int o_flags)
     return file_descriptor;
 }
 
-void close_file(int file_descriptor) 
+void close_file(int file_descriptor)
 {
     if (close(file_descriptor) < 0)
     {
@@ -46,47 +48,55 @@ void get_file_name(bmp_header_t *bmp_header, const char *file_name)
     strcpy(bmp_header->file_name, file_name);
 }
 
-void get_image_width(int file_descriptor, int *width) 
+void get_image_width(int file_descriptor, int *width)
 {
-    if(lseek(file_descriptor, 18, SEEK_SET) < 0) {
+    if (lseek(file_descriptor, 18, SEEK_SET) < 0)
+    {
         perror("Error moving file cursor: ");
         exit(EXIT_FAILURE);
     }
-    
-    if(read(file_descriptor, width, 4) < 0) {
+
+    if (read(file_descriptor, width, 4) < 0)
+    {
         perror("Error reading from file: ");
         exit(EXIT_FAILURE);
     }
 }
 
-void get_image_height(int file_descriptor, int *height) 
+void get_image_height(int file_descriptor, int *height)
 {
-    if(lseek(file_descriptor, 22, SEEK_SET) < 0) {
+    if (lseek(file_descriptor, 22, SEEK_SET) < 0)
+    {
         perror("Error moving file cursor: ");
         exit(EXIT_FAILURE);
     }
 
-    if(read(file_descriptor, height, 4) < 0) {
+    if (read(file_descriptor, height, 4) < 0)
+    {
         perror("Error reading from file: ");
         exit(EXIT_FAILURE);
     }
 }
 
-void get_image_size(int file_descriptor, int *size) 
+void get_image_size(int file_descriptor, int *size)
 {
-    if(lseek(file_descriptor, 2, SEEK_SET) < 0) {
+    if (lseek(file_descriptor, 2, SEEK_SET) < 0)
+    {
         perror("Error moving file cursor: ");
         exit(EXIT_FAILURE);
     }
-    
-    if(read(file_descriptor, size, 4) < 0) {
+
+    if (read(file_descriptor, size, 4) < 0)
+    {
         perror("Error reading from file: ");
         exit(EXIT_FAILURE);
     }
 }
 
-void get_file_stats(const char *file_name, struct stat *buffer) {
-    if(stat(file_name, buffer) < 0) {
+void get_file_stats(const char *file_name, struct stat *buffer)
+{
+    if (stat(file_name, buffer) < 0)
+    {
         perror("Error getting file stats: ");
         exit(EXIT_FAILURE);
     }
@@ -107,7 +117,8 @@ void get_links(struct stat *stats, bmp_header_t *bmp_header)
     bmp_header->links = (int)stats->st_nlink;
 }
 
-void get_permissions(struct stat *stats, bmp_header_t *bmp_header) {
+void get_permissions(struct stat *stats, bmp_header_t *bmp_header)
+{
     mode_t mode = stats->st_mode;
 
     // set permissions for user
@@ -129,7 +140,7 @@ void get_permissions(struct stat *stats, bmp_header_t *bmp_header) {
     bmp_header->others_rights[3] = '\0';
 }
 
-void fill_bmp_header(bmp_header_t *bmp_header, int image_descriptor, struct stat *stats) 
+void fill_bmp_header(bmp_header_t *bmp_header, int image_descriptor, struct stat *stats)
 {
     get_image_width(image_descriptor, &bmp_header->width);
     get_image_height(image_descriptor, &bmp_header->height);
@@ -140,38 +151,79 @@ void fill_bmp_header(bmp_header_t *bmp_header, int image_descriptor, struct stat
     get_permissions(stats, bmp_header);
 }
 
-char *create_buffer(bmp_header_t bmp_header) 
+char *create_buffer(bmp_header_t bmp_header)
 {
     char *buffer = (char *)malloc(200 * sizeof(char));
     sprintf(buffer, "nume fisier: %s\ninaltime: %d\nlungime: %d\ndimensiune: %d\nidentificatorul utilizatorului: %d\ntimpul ultimei modificari: %10s\ncontorul de legaturi: %d\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
-        bmp_header.file_name,
-        bmp_header.height,
-        bmp_header.width,
-        bmp_header.file_size,
-        bmp_header.user_id,
-        bmp_header.last_modified_date,
-        bmp_header.links,
-        bmp_header.user_rights,
-        bmp_header.group_rights,
-        bmp_header.others_rights
-);
+            bmp_header.file_name,
+            bmp_header.height,
+            bmp_header.width,
+            bmp_header.file_size,
+            bmp_header.user_id,
+            bmp_header.last_modified_date,
+            bmp_header.links,
+            bmp_header.user_rights,
+            bmp_header.group_rights,
+            bmp_header.others_rights);
     return buffer;
 }
 
-void write_statistics_to_file(const char *file_name, const char *metadata) {
+void write_statistics_to_file(const char *file_name, const char *buffer)
+{
     int file_descriptor = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-    if (file_descriptor < 0) {
+    if (file_descriptor < 0)
+    {
         perror("Can not open statistics file: ");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
-    if (write(file_descriptor, metadata, strlen(metadata)) < 0) {
+    if (write(file_descriptor, buffer, strlen(buffer)) < 0)
+    {
         perror("Can not write to statistics file: ");
         close(file_descriptor);
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     close(file_descriptor);
+}
+
+DIR *open_directory(const char *name)
+{
+    DIR *dir = opendir(name);
+    if (dir == NULL)
+    {
+        perror("Eroare la deschiderea directorului de intrare");
+        exit(EXIT_FAILURE);
+    }
+    return dir;
+}
+
+
+void read_dir_entries(DIR *dir, const char *inputDir)
+{
+    // Parcurge fiecare intrare din director
+    struct dirent *entry;
+
+    struct stat *stats;
+
+    while ((entry = readdir(dir)) != NULL)
+    {
+        // Ignoră intrările curente și părinte
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        // Construiește calea completă pentru fiecare intrare
+        char filePath[256];
+        sprintf(filePath, "%s/%s", inputDir, entry->d_name);
+        const char fileName[100];
+        strcpy(fileName, entry->d_name);
+
+        printf("%s\n", fileName);
+        //stat(fileName, stats);
+        //printf(S_ISREG(stats->st_mode));
+    }
 }
 
 int main(int argc, char *argv[])
@@ -184,22 +236,29 @@ int main(int argc, char *argv[])
 
     bmp_header_t bmp_header;
     struct stat stats;
+    char inputDir[50];
 
     get_file_name(&bmp_header, argv[1]);
+    strcpy(inputDir, bmp_header.file_name);
+
+    // Deschide directorul de intrare
+    DIR *dir = open_directory(inputDir);
+    read_dir_entries(dir, inputDir);
+
+    // Închide directorul de intrare
+    closedir(dir);
 
     // set open flags
-    int o_flags = O_RDONLY;
-    int file_descriptor = open_file(bmp_header.file_name, o_flags);
+    // int o_flags = O_RDONLY;
+    // int file_descriptor = open_file(bmp_header.file_name, o_flags);
 
-    get_file_stats(bmp_header.file_name, &stats);
+    // get_file_stats(bmp_header.file_name, &stats);
 
-    fill_bmp_header(&bmp_header, file_descriptor, &stats);
+    // fill_bmp_header(&bmp_header, file_descriptor, &stats);
 
-    char *buffer = create_buffer(bmp_header);
-    write_statistics_to_file("statistica.txt", create_buffer(bmp_header));
-    free(buffer);
+    // write_statistics_to_file("statistica.txt", create_buffer(bmp_header));
 
-    close_file(file_descriptor);
+    // close_file(file_descriptor);
 
     return 0;
 }
