@@ -144,7 +144,40 @@ void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_hea
 
 void process_file(const char *filePath, int outputFile)
 {
-    
+    int fd_i = open(filePath, O_RDONLY);
+
+    // Find the last occurrence of '/'
+    const char *lastSlash = strrchr(filePath, '/');
+    // Extract the file name
+    const char *fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
+
+    struct stat stats;
+    if (fstat(fd_i, &stats) == -1)
+    {
+        perror("Eroare la obtinerea info file ");
+        close(fd_i);
+        exit(-1);
+    }
+    char last_modified[20];
+    strftime(last_modified, 20, "%d.%m.%Y", localtime(&stats.st_mtime));
+
+    char user_rights[4], group_rights[4], others_rights[4];
+    get_permissions(&stats, user_rights, group_rights, others_rights);
+
+    char buffer[1024];
+    int buffer_length = sprintf(buffer, "nume fisier: %s\ndimensiune: %ld\nidentificatorul utilizatorului: %d\ntimpul ultimei modificari: %10s\ncontorul de legaturi: %ld\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
+            fileName,
+            (unsigned long)stats.st_size,
+            stats.st_uid, 
+            last_modified,
+            (unsigned long)stats.st_nlink,
+            user_rights,
+            group_rights,
+            others_rights);
+
+    write(outputFile, buffer, buffer_length);
+    close_file(fd_i);
+    close_file(outputFile);
 }
 
 void process_directory(const char *path, int outputFile)

@@ -1,7 +1,5 @@
-nume fisier: imagine.bmp
-inaltime: 1280
-lungime: 1920
-dimensiune: 7372938
+nume fisier: test.txt
+dimensiune: 381
 identificatorul utilizatorului: 1000
 timpul ultimei modificari: 19.11.2023
 contorul de legaturi: 1
