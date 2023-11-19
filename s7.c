@@ -187,7 +187,7 @@ void process_file(const char *filePath, int outputFile)
 void process_directory(const char *filePath, int outputFile)
 {
     int fd_i = open(filePath, O_RDONLY);
-    const char *fileName = get_file_name(filePath);
+    const char *directoryName = get_file_name(filePath);
 
     struct stat stats;
     get_file_fstats(filePath, &stats, fd_i);
@@ -195,10 +195,9 @@ void process_directory(const char *filePath, int outputFile)
     char user_rights[4], group_rights[4], others_rights[4];
     get_permissions(&stats, user_rights, group_rights, others_rights);
 
-
     char buffer[1024];
     int buffer_length = sprintf(buffer, "nume director: %s\nidentificatorul utilizatorului: %d\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
-                                fileName,
+                                directoryName,
                                 stats.st_uid,
                                 user_rights,
                                 group_rights,
@@ -211,6 +210,40 @@ void process_directory(const char *filePath, int outputFile)
 
 void process_link(const char *filePath, int outputFile)
 {
+    int fd_i = open(filePath, O_RDONLY);
+    const char *linkName = get_file_name(filePath);
+
+    struct stat stats;
+    if (lstat(filePath, &stats) == -1)
+    {
+        perror("Error getting link stats: ");
+        close(fd_i);
+        exit(EXIT_FAILURE);
+    }
+
+    char user_rights[4], group_rights[4], others_rights[4];
+    get_permissions(&stats, user_rights, group_rights, others_rights);
+
+    char targetPath[256];
+    ssize_t link_length = readlink(filePath, targetPath, sizeof(targetPath) - 1);
+    if (link_length != -1)
+    {
+        targetPath[link_length] = '\0';
+    }
+
+    char buffer[1024];
+    int buffer_length = sprintf(buffer, "nume legatura: %s\ndimensiune legatura: %ld\ndimensiune fisier: %ld\ndrepturi de acces user legatura: %3s\ndrepturi de acces grup legatura: %3s\ndrepturi de acces altii legatura: %3s\n",
+                                linkName,
+                                link_length,
+                                // cum aflu dimenisunea fisierului link-uit
+                                (unsigned long)stats.st_size,
+                                user_rights,
+                                group_rights,
+                                others_rights);
+
+    write(outputFile, buffer, buffer_length);
+    close_file(fd_i);
+    close_file(outputFile);
 }
 
 void read_directory_files(const char *dirPath, int outputFile)
