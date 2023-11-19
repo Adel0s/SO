@@ -96,13 +96,13 @@ void get_permissions(struct stat *stats, char *user_rights, char *group_rights, 
     others_rights[3] = '\0';
 }
 
-const char* get_file_name(const char *filePath)
+const char *get_file_name(const char *filePath)
 {
     // Find the last occurrence of '/'
     const char *lastSlash = strrchr(filePath, '/');
 
     // Extract the file name
-    const char* fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
+    const char *fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
     return fileName;
 }
 
@@ -135,16 +135,16 @@ void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_hea
 
     char buffer[1024];
     int buffer_length = sprintf(buffer, "nume fisier: %s\ninaltime: %d\nlungime: %d\ndimensiune: %ld\nidentificatorul utilizatorului: %d\ntimpul ultimei modificari: %10s\ncontorul de legaturi: %ld\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
-            fileName,
-            height,
-            width,
-            (unsigned long)stats.st_size,
-            stats.st_uid, 
-            last_modified,
-            (unsigned long)stats.st_nlink,
-            user_rights,
-            group_rights,
-            others_rights);
+                                fileName,
+                                height,
+                                width,
+                                (unsigned long)stats.st_size,
+                                stats.st_uid,
+                                last_modified,
+                                (unsigned long)stats.st_nlink,
+                                user_rights,
+                                group_rights,
+                                others_rights);
 
     printf("Writing into statistica.txt file...\n");
     write(outputFile, buffer, buffer_length);
@@ -170,28 +170,47 @@ void process_file(const char *filePath, int outputFile)
 
     char buffer[1024];
     int buffer_length = sprintf(buffer, "nume fisier: %s\ndimensiune: %ld\nidentificatorul utilizatorului: %d\ntimpul ultimei modificari: %10s\ncontorul de legaturi: %ld\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
-            fileName,
-            (unsigned long)stats.st_size,
-            stats.st_uid, 
-            last_modified,
-            (unsigned long)stats.st_nlink,
-            user_rights,
-            group_rights,
-            others_rights);
+                                fileName,
+                                (unsigned long)stats.st_size,
+                                stats.st_uid,
+                                last_modified,
+                                (unsigned long)stats.st_nlink,
+                                user_rights,
+                                group_rights,
+                                others_rights);
 
     write(outputFile, buffer, buffer_length);
     close_file(fd_i);
     close_file(outputFile);
 }
 
-void process_directory(const char *path, int outputFile)
+void process_directory(const char *filePath, int outputFile)
 {
-    
+    int fd_i = open(filePath, O_RDONLY);
+    const char *fileName = get_file_name(filePath);
+
+    struct stat stats;
+    get_file_fstats(filePath, &stats, fd_i);
+
+    char user_rights[4], group_rights[4], others_rights[4];
+    get_permissions(&stats, user_rights, group_rights, others_rights);
+
+
+    char buffer[1024];
+    int buffer_length = sprintf(buffer, "nume director: %s\nidentificatorul utilizatorului: %d\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
+                                fileName,
+                                stats.st_uid,
+                                user_rights,
+                                group_rights,
+                                others_rights);
+
+    write(outputFile, buffer, buffer_length);
+    close_file(fd_i);
+    close_file(outputFile);
 }
 
 void process_link(const char *filePath, int outputFile)
 {
-
 }
 
 void read_directory_files(const char *dirPath, int outputFile)
@@ -223,7 +242,7 @@ void read_directory_files(const char *dirPath, int outputFile)
         if (S_ISREG(stats.st_mode))
         {
             const char *ext = strrchr(entry->d_name, '.');
-	        if (ext != NULL && strcmp(ext, ".bmp") == 0)
+            if (ext != NULL && strcmp(ext, ".bmp") == 0)
             {
                 printf("Process bmp file...\n");
                 process_BMP_file(filePath, outputFile, bmp_header);
