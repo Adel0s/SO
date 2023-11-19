@@ -63,6 +63,16 @@ void get_file_stats(const char *file_name, struct stat *buffer)
     }
 }
 
+void get_file_fstats(const char *file_name, struct stat *buffer, int file_descriptor)
+{
+    if (stat(file_name, buffer) < 0)
+    {
+        perror("Error getting file stats: ");
+        close(file_descriptor);
+        exit(EXIT_FAILURE);
+    }
+}
+
 void get_permissions(struct stat *stats, char *user_rights, char *group_rights, char *others_rights)
 {
     mode_t mode = stats->st_mode;
@@ -115,12 +125,7 @@ void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_hea
     const char *fileName = get_file_name(filePath);
 
     struct stat stats;
-    if (fstat(fd_i, &stats) == -1)
-    {
-        perror("Error getting file stats: ");
-        close(fd_i);
-        exit(EXIT_FAILURE);
-    }
+    get_file_fstats(filePath, &stats, fd_i);
 
     char last_modified[20];
     strftime(last_modified, 20, "%d.%m.%Y", localtime(&stats.st_mtime));
@@ -155,12 +160,8 @@ void process_file(const char *filePath, int outputFile)
     const char *fileName = get_file_name(filePath);
 
     struct stat stats;
-    if (fstat(fd_i, &stats) == -1)
-    {
-        perror("Eroare la obtinerea info file ");
-        close(fd_i);
-        exit(-1);
-    }
+    get_file_fstats(filePath, &stats, fd_i);
+
     char last_modified[20];
     strftime(last_modified, 20, "%d.%m.%Y", localtime(&stats.st_mtime));
 
