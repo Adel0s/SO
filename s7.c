@@ -86,6 +86,16 @@ void get_permissions(struct stat *stats, char *user_rights, char *group_rights, 
     others_rights[3] = '\0';
 }
 
+const char* get_file_name(const char *filePath)
+{
+    // Find the last occurrence of '/'
+    const char *lastSlash = strrchr(filePath, '/');
+
+    // Extract the file name
+    const char* fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
+    return fileName;
+}
+
 void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_header)
 {
     int fd_i = open(filePath, O_RDONLY);
@@ -102,11 +112,7 @@ void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_hea
     int width = bmp_header.width;
     int height = bmp_header.height;
 
-    // Find the last occurrence of '/'
-    const char *lastSlash = strrchr(filePath, '/');
-
-    // Extract the file name
-    const char *fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
+    const char *fileName = get_file_name(filePath);
 
     struct stat stats;
     if (fstat(fd_i, &stats) == -1)
@@ -146,10 +152,7 @@ void process_file(const char *filePath, int outputFile)
 {
     int fd_i = open(filePath, O_RDONLY);
 
-    // Find the last occurrence of '/'
-    const char *lastSlash = strrchr(filePath, '/');
-    // Extract the file name
-    const char *fileName = (lastSlash != NULL) ? lastSlash + 1 : filePath;
+    const char *fileName = get_file_name(filePath);
 
     struct stat stats;
     if (fstat(fd_i, &stats) == -1)
