@@ -7,8 +7,8 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <time.h>
-#include <unistd.h>
 #include <stdint.h>
+#include <sys/wait.h>
 
 #pragma pack(1)
 typedef struct bmp_header_t
@@ -65,10 +65,10 @@ void get_file_stats(const char *file_name, struct stat *buffer)
 
 void get_file_fstats(const char *file_name, struct stat *buffer, int file_descriptor)
 {
-    if (stat(file_name, buffer) < 0)
+    if (fstat(file_descriptor, buffer) < 0)
     {
         perror("Error getting file stats: ");
-        close(file_descriptor);
+        close_file(file_descriptor);
         exit(EXIT_FAILURE);
     }
 }
@@ -106,19 +106,16 @@ const char *get_file_name(const char *filePath)
     return fileName;
 }
 
-void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_header)
+void process_BMP_file(const char *filePath, int outputFile)
 {
     int fd_i = open(filePath, O_RDONLY);
-    if (fd_i == -1)
-    {
-        perror("Error opening input file: \n");
-        exit(EXIT_FAILURE);
-    }
+
     if (read(fd_i, &bmp_header, sizeof(bmp_header_t)) != sizeof(bmp_header_t))
     {
-        perror("Error reading: \n");
+        perror("Error reading BMP header: ");
         exit(EXIT_FAILURE);
     }
+
     int width = bmp_header.width;
     int height = bmp_header.height;
 
@@ -146,21 +143,56 @@ void process_BMP_file(const char *filePath, int outputFile, bmp_header_t bmp_hea
                                 group_rights,
                                 others_rights);
 
-    printf("Writing into statistica.txt file...\n");
+    //printf("Writing into %s_statistica.txt file...\n", fileName);
     write(outputFile, buffer, buffer_length);
-    close(fd_i);
+
+    close_file(fd_i);
+}
+
+void convert_to_grayscale(const char *filePath, int outputFile)
+{
+    int fd_i = open(filePath, O_RDONLY);
+
+    struct stat stats;
+    get_file_fstats(filePath, &stats, fd_i);
+
+    int width = bmp_header.width;
+    int height = bmp_header.height;
+
+    unsigned char pixel[3];
+    int grayscale_value;
+
+    for (int i = 0; i < height; ++i)
+    {
+        for (int j = 0; j < width; ++j)
+        {
+            if (read(fd_i, pixel, sizeof(pixel)) != sizeof(pixel))
+            {
+                perror("Error reading pixel: ");
+                exit(EXIT_FAILURE);
+            }
+
+            grayscale_value = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
+            memset(pixel, grayscale_value, sizeof(pixel));
+
+            if (write(outputFile, pixel, sizeof(pixel)) != sizeof(pixel))
+            {
+                perror("Error writing pixel: ");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    close_file(fd_i);
     close_file(outputFile);
-    printf("Finished writing into statistica.txt file!\n");
 }
 
 void process_file(const char *filePath, int outputFile)
 {
-    int fd_i = open(filePath, O_RDONLY);
-
     const char *fileName = get_file_name(filePath);
 
     struct stat stats;
-    get_file_fstats(filePath, &stats, fd_i);
+    get_file_stats(filePath, &stats);
 
     char last_modified[20];
     strftime(last_modified, 20, "%d.%m.%Y", localtime(&stats.st_mtime));
@@ -180,17 +212,14 @@ void process_file(const char *filePath, int outputFile)
                                 others_rights);
 
     write(outputFile, buffer, buffer_length);
-    close_file(fd_i);
-    close_file(outputFile);
 }
 
 void process_directory(const char *filePath, int outputFile)
 {
-    int fd_i = open(filePath, O_RDONLY);
     const char *directoryName = get_file_name(filePath);
 
     struct stat stats;
-    get_file_fstats(filePath, &stats, fd_i);
+    get_file_stats(filePath, &stats);
 
     char user_rights[4], group_rights[4], others_rights[4];
     get_permissions(&stats, user_rights, group_rights, others_rights);
@@ -204,20 +233,16 @@ void process_directory(const char *filePath, int outputFile)
                                 others_rights);
 
     write(outputFile, buffer, buffer_length);
-    close_file(fd_i);
-    close_file(outputFile);
 }
 
 void process_link(const char *filePath, int outputFile)
 {
-    int fd_i = open(filePath, O_RDONLY);
     const char *linkName = get_file_name(filePath);
 
     struct stat stats;
     if (lstat(filePath, &stats) == -1)
     {
         perror("Error getting link stats: ");
-        close(fd_i);
         exit(EXIT_FAILURE);
     }
 
@@ -239,20 +264,16 @@ void process_link(const char *filePath, int outputFile)
                                 user_rights,
                                 group_rights,
                                 others_rights);
-    printf("Writing into statistica.txt...\n");
-    write(outputFile, buffer, buffer_length);
 
-    close(fd_i);
-    close(outputFile);
-    printf("Finished writing!\n");
+    write(outputFile, buffer, buffer_length);
 }
 
-void read_directory_files(const char *dirPath, int outputFile)
+void read_directory_files(const char *dirPath, const char *outputDir)
 {
     DIR *dir = opendir(dirPath);
     if (dir == NULL)
     {
-        perror("Error opening directory: \n");
+        perror("Error opening directory: ");
         exit(EXIT_FAILURE);
     }
 
@@ -261,62 +282,112 @@ void read_directory_files(const char *dirPath, int outputFile)
 
     while ((entry = readdir(dir)) != NULL)
     {
+        printf("debug\n");
         char filePath[1024];
         snprintf(filePath, sizeof(filePath), "%s/%s", dirPath, entry->d_name);
 
         struct stat stats;
-        lstat(filePath, &stats);
-        //get_file_stats(filePath, &stats);
+        get_file_stats(filePath, &stats);
 
-        // Ignoră intrările curente și părinte (valabil in cazul in care avem director in interiorul directorului dat ca input)
+        // Ignore current and parent entries
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue;
         }
 
-        if (S_ISREG(stats.st_mode))
+        int pid = fork();
+        if (pid == -1)
         {
-            const char *ext = strrchr(entry->d_name, '.');
-            if (ext != NULL && strcmp(ext, ".bmp") == 0)
-            {
-                printf("Process bmp file...\n");
-                process_BMP_file(filePath, outputFile, bmp_header);
-            }
-            else
-            {
-                printf("Processing regular file...\n");
-                process_file(filePath, outputFile);
-            }
+            perror("Error forking process: ");
+            exit(EXIT_FAILURE);
         }
-        else if (S_ISDIR(stats.st_mode))
+        else if (pid == 0) // Child process
         {
-            printf("Processing directory...\n");
-            process_directory(filePath, outputFile);
+            char outputFileName[1024];
+            snprintf(outputFileName, sizeof(outputFileName), "%s/%s_statistica.txt", outputDir, entry->d_name);
+
+            printf("pid==0 before open\n");
+            int outputFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+            printf("pid==0 after open\n");
+
+            if (S_ISREG(stats.st_mode))
+            {
+                const char *ext = strrchr(entry->d_name, '.');
+                if (ext != NULL && strcmp(ext, ".bmp") == 0)
+                {
+                    printf("Process bmp file...\n");
+                    process_BMP_file(filePath, outputFile);
+                    int grayscale_pid = fork();
+                    if (grayscale_pid == -1)
+                    {
+                        perror("Error forking grayscale process: ");
+                        exit(EXIT_FAILURE);
+                    }
+                    else if (grayscale_pid == 0) // Grayscale child process
+                    {
+                        printf("grayscale\n");
+                        char grayscaleFileName[1024];
+                        snprintf(grayscaleFileName, sizeof(grayscaleFileName), "%s/%s_grayscale.bmp", outputDir, entry->d_name);
+
+                        int grayscaleFile = open(grayscaleFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+
+                        convert_to_grayscale(filePath, grayscaleFile);
+
+                        exit(EXIT_SUCCESS);
+                    }
+                }
+                else
+                {
+                    printf("Processing regular file...\n");
+                    process_file(filePath, outputFile);
+                }
+            }
+            else if (S_ISDIR(stats.st_mode))
+            {
+                printf("Processing directory...\n");
+                process_directory(filePath, outputFile);
+            }
+            else if (S_ISLNK(stats.st_mode))
+            {
+                printf("Processing symbolic link...\n");
+                process_link(filePath, outputFile);
+            }
+
+            exit(EXIT_SUCCESS);
         }
-        else if (S_ISLNK(stats.st_mode))
+        else if(pid > 0)
         {
-            printf("Processing symbolinc link...\n");
-            process_link(filePath, outputFile);
+            // Parent process continues to the next iteration
+            int status;
+            waitpid(pid, &status, 0);
+            printf("S-a încheiat procesul cu pid-ul %d și codul %d\n", pid, WEXITSTATUS(status));
         }
     }
+
+    closedir(dir);
+
     printf("Finished processing directory!\n");
 }
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
+    if (argc != 3)
     {
-        printf("Usage: %s <input_directory>\n", argv[0]);
+        printf("Usage: %s <input_directory> <output_directory>\n", argv[0]);
         return 1;
     }
 
     char *inputPath = argv[1];
+    char *outputPath = argv[2];
+
     int o_flags = O_WRONLY | O_CREAT | O_TRUNC;
     int o_mode = S_IRUSR | S_IWUSR;
 
     int outputFile = open_file("statistica.txt", o_flags, o_mode);
 
-    read_directory_files(inputPath, outputFile);
+    read_directory_files(inputPath, outputPath);
+
+    close_file(outputFile);
 
     return 0;
 }
