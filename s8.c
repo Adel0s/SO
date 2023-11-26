@@ -28,6 +28,7 @@ typedef struct bmp_header_t
     int32_t y_pixels;
     int32_t colors_used;
     int32_t colors_important;
+
 } bmp_header_t;
 #pragma pack()
 
@@ -56,7 +57,7 @@ void close_file(int file_descriptor)
 
 void get_file_stats(const char *file_name, struct stat *buffer)
 {
-    if (stat(file_name, buffer) < 0)
+    if (lstat(file_name, buffer) < 0)
     {
         perror("Error getting file stats: ");
         exit(EXIT_FAILURE);
@@ -143,48 +144,48 @@ void process_BMP_file(const char *filePath, int outputFile)
                                 group_rights,
                                 others_rights);
 
-    //printf("Writing into %s_statistica.txt file...\n", fileName);
+    printf("Writing into %s_statistica.txt file...\n", fileName);
     write(outputFile, buffer, buffer_length);
 
-    close_file(fd_i);
+    close(fd_i);
 }
 
-void convert_to_grayscale(const char *filePath, int outputFile)
+void convert_to_grayscale(const char *filePath)
 {
-    int fd_i = open(filePath, O_RDONLY);
-
-    struct stat stats;
-    get_file_fstats(filePath, &stats, fd_i);
-
+    int fd_i = open(filePath, O_RDWR);
+    unsigned char pixel[3];
     int width = bmp_header.width;
     int height = bmp_header.height;
-
-    unsigned char pixel[3];
     int grayscale_value;
 
-    for (int i = 0; i < height; ++i)
+    if (lseek(fd_i, 54, SEEK_SET) < 0)
     {
-        for (int j = 0; j < width; ++j)
+        perror("Error moving file cursor: ");
+        exit(EXIT_FAILURE);
+    }
+
+    for (int i = 0; i < height * width; i++)
+    {
+        if (read(fd_i, pixel, 3) < 0)
         {
-            if (read(fd_i, pixel, sizeof(pixel)) != sizeof(pixel))
-            {
-                perror("Error reading pixel: ");
-                exit(EXIT_FAILURE);
-            }
-
-            grayscale_value = 0.299 * pixel[2] + 0.587 * pixel[1] + 0.114 * pixel[0];
-            memset(pixel, grayscale_value, sizeof(pixel));
-
-            if (write(outputFile, pixel, sizeof(pixel)) != sizeof(pixel))
-            {
-                perror("Error writing pixel: ");
-                exit(EXIT_FAILURE);
-            }
+            perror("Error reading from file: ");
+            exit(EXIT_FAILURE);
+        }
+        grayscale_value = 0.299 * pixel[0] + 0.587 * pixel[1] + 0.114 * pixel[2];
+        memset(pixel, grayscale_value, sizeof(pixel));
+        if (lseek(fd_i, -3, SEEK_CUR) < 0)
+        {
+            perror("Error moving file cursor: ");
+            exit(EXIT_FAILURE);
+        }
+        if (write(fd_i, pixel, sizeof(pixel)) != sizeof(pixel))
+        {
+            perror("Error writing pixel: ");
+            exit(EXIT_FAILURE);
         }
     }
 
-    close_file(fd_i);
-    close_file(outputFile);
+    close(fd_i);
 }
 
 void process_file(const char *filePath, int outputFile)
@@ -277,12 +278,13 @@ void read_directory_files(const char *dirPath, const char *outputDir)
         exit(EXIT_FAILURE);
     }
 
+    int outputFile = -1;
+
     struct dirent *entry;
     printf("Processing directory files...\n");
 
     while ((entry = readdir(dir)) != NULL)
     {
-        printf("debug\n");
         char filePath[1024];
         snprintf(filePath, sizeof(filePath), "%s/%s", dirPath, entry->d_name);
 
@@ -306,9 +308,8 @@ void read_directory_files(const char *dirPath, const char *outputDir)
             char outputFileName[1024];
             snprintf(outputFileName, sizeof(outputFileName), "%s/%s_statistica.txt", outputDir, entry->d_name);
 
-            printf("pid==0 before open\n");
-            int outputFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-            printf("pid==0 after open\n");
+            outputFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+            printf("outputFileName: %s\n", outputFileName);
 
             if (S_ISREG(stats.st_mode))
             {
@@ -317,6 +318,7 @@ void read_directory_files(const char *dirPath, const char *outputDir)
                 {
                     printf("Process bmp file...\n");
                     process_BMP_file(filePath, outputFile);
+
                     int grayscale_pid = fork();
                     if (grayscale_pid == -1)
                     {
@@ -325,14 +327,7 @@ void read_directory_files(const char *dirPath, const char *outputDir)
                     }
                     else if (grayscale_pid == 0) // Grayscale child process
                     {
-                        printf("grayscale\n");
-                        char grayscaleFileName[1024];
-                        snprintf(grayscaleFileName, sizeof(grayscaleFileName), "%s/%s_grayscale.bmp", outputDir, entry->d_name);
-
-                        int grayscaleFile = open(grayscaleFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-
-                        convert_to_grayscale(filePath, grayscaleFile);
-
+                        convert_to_grayscale(filePath);
                         exit(EXIT_SUCCESS);
                     }
                 }
@@ -355,7 +350,7 @@ void read_directory_files(const char *dirPath, const char *outputDir)
 
             exit(EXIT_SUCCESS);
         }
-        else if(pid > 0)
+        else if (pid > 0)
         {
             // Parent process continues to the next iteration
             int status;
@@ -365,6 +360,7 @@ void read_directory_files(const char *dirPath, const char *outputDir)
     }
 
     closedir(dir);
+    //close(outputFile);
 
     printf("Finished processing directory!\n");
 }
