@@ -288,6 +288,16 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
 
     struct dirent *entry;
 
+    // creez cele doua pipe-uri
+    // pipe1: child1 -> child2
+    // pipe2: child2 -> parent
+    int p1fd[2], p2fd[2];
+    if ((pipe(p1fd) < 0) || (pipe(p2fd) < 0)) {
+      perror("Error creating pipes...\n");
+      exit(EXIT_FAILURE);
+    }
+
+
     printf("Processing directory files...\n\n");
     while ((entry = readdir(dir)) != NULL)
     {
