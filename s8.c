@@ -9,6 +9,7 @@
 #include <time.h>
 #include <stdint.h>
 #include <sys/wait.h>
+#include <ctype.h>
 
 #pragma pack(1)
 typedef struct bmp_header_t
@@ -56,6 +57,15 @@ void close_file(int file_descriptor)
 }
 
 void get_file_stats(const char *file_name, struct stat *buffer)
+{
+    if (lstat(file_name, buffer) < 0)
+    {
+        perror("Error getting file stats: ");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void get_file_lstats(const char *file_name, struct stat *buffer)
 {
     if (lstat(file_name, buffer) < 0)
     {
@@ -123,7 +133,7 @@ void process_BMP_file(const char *filePath, int outputFile)
     const char *fileName = get_file_name(filePath);
 
     struct stat stats;
-    get_file_fstats(filePath, &stats, fd_i);
+    get_file_stats(filePath, &stats);
 
     char last_modified[20];
     strftime(last_modified, 20, "%d.%m.%Y", localtime(&stats.st_mtime));
@@ -144,7 +154,7 @@ void process_BMP_file(const char *filePath, int outputFile)
                                 group_rights,
                                 others_rights);
 
-    printf("Writing into %s_statistica.txt file...\n", fileName);
+    printf("Writing into %s_statistica.txt file...\n\n", fileName);
     write(outputFile, buffer, buffer_length);
 
     close(fd_i);
@@ -152,6 +162,7 @@ void process_BMP_file(const char *filePath, int outputFile)
 
 void convert_to_grayscale(const char *filePath)
 {
+    printf("Converting to grayscale...\n");
     int fd_i = open(filePath, O_RDWR);
     unsigned char pixel[3];
     int width = bmp_header.width;
@@ -186,28 +197,29 @@ void convert_to_grayscale(const char *filePath)
     }
 
     close(fd_i);
+    printf("Finished converting to grayscale.\n");
 }
 
-void process_file(const char *filePath, int outputFile)
+void write_reg_file(const char *filePath, int outputFile, struct stat *stats)
 {
     const char *fileName = get_file_name(filePath);
 
-    struct stat stats;
-    get_file_stats(filePath, &stats);
+    // struct stat stats;
+    // get_file_stats(filePath, &stats);
 
     char last_modified[20];
-    strftime(last_modified, 20, "%d.%m.%Y", localtime(&stats.st_mtime));
+    strftime(last_modified, 20, "%d.%m.%Y", localtime(&(*stats).st_mtime));
 
     char user_rights[4], group_rights[4], others_rights[4];
-    get_permissions(&stats, user_rights, group_rights, others_rights);
+    get_permissions(stats, user_rights, group_rights, others_rights);
 
     char buffer[1024];
     int buffer_length = sprintf(buffer, "nume fisier: %s\ndimensiune: %ld\nidentificatorul utilizatorului: %d\ntimpul ultimei modificari: %10s\ncontorul de legaturi: %ld\ndrepturi de acces user: %3s\ndrepturi de acces grup: %3s\ndrepturi de acces altii: %3s\n",
                                 fileName,
-                                (unsigned long)stats.st_size,
-                                stats.st_uid,
+                                (unsigned long)(*stats).st_size,
+                                (*stats).st_uid,
                                 last_modified,
-                                (unsigned long)stats.st_nlink,
+                                (unsigned long)(*stats).st_nlink,
                                 user_rights,
                                 group_rights,
                                 others_rights);
@@ -236,32 +248,26 @@ void process_directory(const char *filePath, int outputFile)
     write(outputFile, buffer, buffer_length);
 }
 
-void process_link(const char *filePath, int outputFile)
+void process_link(const char *filePath, int outputFile, struct stat *stats)
 {
     const char *linkName = get_file_name(filePath);
 
-    struct stat stats;
-    if (lstat(filePath, &stats) == -1)
+    struct stat target_stats;
+    
+    if (stat(filePath, &target_stats) == -1)
     {
-        perror("Error getting link stats: ");
+        perror("Error getting target stats: ");
         exit(EXIT_FAILURE);
     }
 
     char user_rights[4], group_rights[4], others_rights[4];
-    get_permissions(&stats, user_rights, group_rights, others_rights);
-
-    char targetPath[256];
-    ssize_t link_length = readlink(filePath, targetPath, sizeof(targetPath) - 1);
-    if (link_length != -1)
-    {
-        targetPath[link_length] = '\0';
-    }
+    get_permissions(stats, user_rights, group_rights, others_rights);
 
     char buffer[1024];
     int buffer_length = sprintf(buffer, "nume legatura: %s\ndimensiune legatura: %ld\ndimensiune fisier: %ld\ndrepturi de acces user legatura: %3s\ndrepturi de acces grup legatura: %3s\ndrepturi de acces altii legatura: %3s\n",
                                 linkName,
-                                link_length,
-                                (unsigned long)stats.st_size,
+                                (unsigned long)(*stats).st_size,
+                                target_stats.st_size,
                                 user_rights,
                                 group_rights,
                                 others_rights);
@@ -269,7 +275,7 @@ void process_link(const char *filePath, int outputFile)
     write(outputFile, buffer, buffer_length);
 }
 
-void read_directory_files(const char *dirPath, const char *outputDir)
+void read_directory_files(const char *dirPath, const char *outputDir, const char *c)
 {
     DIR *dir = opendir(dirPath);
     if (dir == NULL)
@@ -281,17 +287,17 @@ void read_directory_files(const char *dirPath, const char *outputDir)
     int outputFile = -1;
 
     struct dirent *entry;
-    printf("Processing directory files...\n");
 
+    printf("Processing directory files...\n\n");
     while ((entry = readdir(dir)) != NULL)
     {
         char filePath[1024];
         snprintf(filePath, sizeof(filePath), "%s/%s", dirPath, entry->d_name);
 
         struct stat stats;
-        get_file_stats(filePath, &stats);
+        get_file_lstats(filePath, &stats);
 
-        // Ignore current and parent entries
+        // Ignore '.' and '..' entries
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue;
@@ -303,8 +309,9 @@ void read_directory_files(const char *dirPath, const char *outputDir)
             perror("Error forking process: ");
             exit(EXIT_FAILURE);
         }
-        else if (pid == 0) // Child process
+        else if (pid == 0) // Proces fiu
         {
+            int total_lines_written = 0;
             char outputFileName[1024];
             snprintf(outputFileName, sizeof(outputFileName), "%s/%s_statistica.txt", outputDir, entry->d_name);
 
@@ -334,7 +341,7 @@ void read_directory_files(const char *dirPath, const char *outputDir)
                 else
                 {
                     printf("Processing regular file...\n");
-                    process_file(filePath, outputFile);
+                    write_reg_file(filePath, outputFile, &stats);
                 }
             }
             else if (S_ISDIR(stats.st_mode))
@@ -345,7 +352,7 @@ void read_directory_files(const char *dirPath, const char *outputDir)
             else if (S_ISLNK(stats.st_mode))
             {
                 printf("Processing symbolic link...\n");
-                process_link(filePath, outputFile);
+                process_link(filePath, outputFile, &stats);
             }
 
             exit(EXIT_SUCCESS);
@@ -355,10 +362,11 @@ void read_directory_files(const char *dirPath, const char *outputDir)
             // Parent process continues to the next iteration
             int status;
             waitpid(pid, &status, 0);
-            printf("S-a încheiat procesul cu pid-ul %d și codul %d\n", pid, WEXITSTATUS(status));
+            printf("S-a încheiat procesul cu pid-ul %d și codul %d\n\n", pid, WEXITSTATUS(status));
         }
     }
 
+    // close input directory
     closedir(dir);
     //close(outputFile);
 
@@ -367,23 +375,22 @@ void read_directory_files(const char *dirPath, const char *outputDir)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 4)
     {
-        printf("Usage: %s <input_directory> <output_directory>\n", argv[0]);
+        printf("Usage: %s <input_directory> <output_directory> c<>\n", argv[0]);
+        return 1;
+    }
+
+    char ch = argv[3][0];
+    if(!isalnum(ch)) {
+        printf("Argumentul <c> trebuie sa fie un caracter alfanumeric!\n");
         return 1;
     }
 
     char *inputPath = argv[1];
     char *outputPath = argv[2];
 
-    int o_flags = O_WRONLY | O_CREAT | O_TRUNC;
-    int o_mode = S_IRUSR | S_IWUSR;
-
-    int outputFile = open_file("statistica.txt", o_flags, o_mode);
-
-    read_directory_files(inputPath, outputPath);
-
-    close_file(outputFile);
+    read_directory_files(inputPath, outputPath, &ch);
 
     return 0;
 }
