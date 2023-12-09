@@ -382,6 +382,24 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
                     {
                         // Inchid scrierea in pipe1
                         close(pipe1[1]);
+
+                        // Redirectez stdin sa citeasca din pipe-ul 1(stdin are file descriptor = 0)
+                        if(dup2(pipe1[0], 0) < 0) 
+                        {
+                            perror("Error redirecting stdin: ");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        // Inchid citirea in pipe2
+                        close(pipe2[0]);
+
+                        if(dup2(pipe2[1], 1) < 0)
+                        {
+                            perror("Error redirecting stdout: ");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        execlp("/bin/sh", "/bin/sh", "./regex_s9.sh", c, NULL);
                     }
                 }
             }
