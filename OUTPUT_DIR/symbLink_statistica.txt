@@ -1,0 +1,6 @@
+nume legatura: symbLink
+dimensiune legatura: 11
+dimensiune fisier: 7372938
+drepturi de acces user legatura: rwx
+drepturi de acces grup legatura: rwx
+drepturi de acces altii legatura: rwx

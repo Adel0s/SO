@@ -1,0 +1,10 @@
+nume fisier: imagine2.bmp
+inaltime: 1080
+lungime: 1920
+dimensiune: 6220856
+identificatorul utilizatorului: 1000
+timpul ultimei modificari: 09.12.2023
+contorul de legaturi: 1
+drepturi de acces user: rw-
+drepturi de acces grup: r--
+drepturi de acces altii: r--

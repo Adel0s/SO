@@ -322,7 +322,6 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
         }
         else if (pid == 0)
         {
-            int total_lines_written = 0;
             char outputFileName[1024];
             snprintf(outputFileName, sizeof(outputFileName), "%s/%s_statistica.txt", outputDir, entry->d_name);
 
