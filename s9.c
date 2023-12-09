@@ -35,7 +35,7 @@ typedef struct bmp_header_t
 #pragma pack()
 
 bmp_header_t bmp_header;
-int valid_sentences;
+int correct_sentences;
 
 int open_file(const char *pathname, int o_flags, int o_mode)
 {
@@ -255,7 +255,7 @@ void process_link(const char *filePath, int outputFile, struct stat *stats)
     const char *linkName = get_file_name(filePath);
 
     struct stat target_stats;
-    
+
     if (stat(filePath, &target_stats) == -1)
     {
         perror("Error getting target stats: ");
@@ -290,14 +290,6 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
 
     struct dirent *entry;
 
-    // creez cele doua pipe-uri
-    int pipe1[2], pipe2[2];
-    if ((pipe(pipe1) < 0) || (pipe(pipe2) < 0)) {
-      perror("Error creating pipes...\n");
-      exit(EXIT_FAILURE);
-    }
-
-
     printf("Processing directory files...\n\n");
     while ((entry = readdir(dir)) != NULL)
     {
@@ -311,6 +303,14 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
         {
             continue;
+        }
+
+        // creez cele doua pipe-uri
+        int pipe1[2], pipe2[2];
+        if ((pipe(pipe1) < 0) || (pipe(pipe2) < 0))
+        {
+            perror("Error creating pipes: \n");
+            exit(EXIT_FAILURE);
         }
 
         // Creez procesul fiu care scrie fisierele de statistica in functie de tipul fisierului
@@ -327,7 +327,7 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
             snprintf(outputFileName, sizeof(outputFileName), "%s/%s_statistica.txt", outputDir, entry->d_name);
 
             outputFile = open(outputFileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-            printf("outputFileName: %s\n", outputFileName);
+            // printf("outputFileName: %s\n", outputFileName);
 
             if (S_ISREG(stats.st_mode))
             {
@@ -354,15 +354,18 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
                 {
                     printf("Processing regular file...\n");
                     write_reg_file(filePath, outputFile, &stats);
+                    printf("Finished writing statistics for txt file.\n");
+
                     // Inchid ambele capete ale pipe-ului 2
                     close(pipe2[0]);
-                    close(pipe2[0]);
+                    close(pipe2[1]);
 
                     // Inchid citirea pentru pipe-ul 1
                     close(pipe1[0]);
+                    printf("test\n");
 
                     // Redirectez stdout sa scrie in pipe-ul 1(stdout are file descriptor = 1)
-                    if(dup2(pipe1[1], 1) < 0)
+                    if (dup2(pipe1[1], 1) < 0)
                     {
                         perror("Error redirecting stdout: ");
                         exit(EXIT_FAILURE);
@@ -370,10 +373,10 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
 
                     // Trimit continutul fisierului pe care il iau folosind comanada cat si il trimit pe pipe1
                     execlp("cat", "cat", filePath, NULL);
-                    
+
                     // Creez al doilea proces fiu care executa scriptul sh care face verificarea propozitiilor, dupa ce statistica a fost scrisa de primul fiu
                     int exec_script_pid = fork();
-                    if(exec_script_pid == -1)
+                    if (exec_script_pid == -1)
                     {
                         perror("Error forking execute script process: ");
                         exit(EXIT_FAILURE);
@@ -384,7 +387,7 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
                         close(pipe1[1]);
 
                         // Redirectez stdin sa citeasca din pipe-ul 1(stdin are file descriptor = 0)
-                        if(dup2(pipe1[0], 0) < 0) 
+                        if (dup2(pipe1[0], 0) < 0)
                         {
                             perror("Error redirecting stdin: ");
                             exit(EXIT_FAILURE);
@@ -393,7 +396,7 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
                         // Inchid citirea in pipe2
                         close(pipe2[0]);
 
-                        if(dup2(pipe2[1], 1) < 0)
+                        if (dup2(pipe2[1], 1) < 0)
                         {
                             perror("Error redirecting stdout: ");
                             exit(EXIT_FAILURE);
@@ -401,6 +404,23 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
 
                         execlp("/bin/sh", "/bin/sh", "./regex_s9.sh", c, NULL);
                     }
+
+                    close(pipe1[0]);
+                    close(pipe1[1]);
+
+                    close(pipe2[1]);
+
+                    // Citesc din pipe-ul 2
+                    char buffer[20] = "";
+                    if (read(pipe2[0], buffer, sizeof(buffer)) < 0)
+                    {
+                        perror("Error reading pipe2: ");
+                        exit(EXIT_FAILURE);
+                    }
+                    int cnt = atoi(buffer);
+                    printf("cnt = %d\n", cnt);
+                    correct_sentences += cnt;
+                    printf("valid_sentences = %d\n", correct_sentences);
                 }
             }
             else if (S_ISDIR(stats.st_mode))
@@ -441,7 +461,8 @@ int main(int argc, char *argv[])
     }
 
     char ch = argv[3][0];
-    if(!isalnum(ch)) {
+    if (!isalnum(ch))
+    {
         printf("Argumentul <c> trebuie sa fie un caracter alfanumeric!\n");
         return 1;
     }
@@ -450,6 +471,7 @@ int main(int argc, char *argv[])
     char *outputPath = argv[2];
 
     read_directory_files(inputPath, outputPath, &ch);
+    printf("Propozitii valide: %d\n", correct_sentences);
 
     return 0;
 }
