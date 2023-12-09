@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <ctype.h>
 
+// folosim pack(1) pentru a nu lasa compilatorul sa introduca padding
 #pragma pack(1)
 typedef struct bmp_header_t
 {
@@ -34,6 +35,7 @@ typedef struct bmp_header_t
 #pragma pack()
 
 bmp_header_t bmp_header;
+int valid_sentences;
 
 int open_file(const char *pathname, int o_flags, int o_mode)
 {
@@ -69,7 +71,7 @@ void get_file_lstats(const char *file_name, struct stat *buffer)
 {
     if (lstat(file_name, buffer) < 0)
     {
-        perror("Error getting file stats: ");
+        perror("Error getting file lstats: ");
         exit(EXIT_FAILURE);
     }
 }
@@ -78,7 +80,7 @@ void get_file_fstats(const char *file_name, struct stat *buffer, int file_descri
 {
     if (fstat(file_descriptor, buffer) < 0)
     {
-        perror("Error getting file stats: ");
+        perror("Error getting file fstats: ");
         close_file(file_descriptor);
         exit(EXIT_FAILURE);
     }
@@ -88,19 +90,19 @@ void get_permissions(struct stat *stats, char *user_rights, char *group_rights, 
 {
     mode_t mode = stats->st_mode;
 
-    // set permissions for user
+    // Set permissions for user
     user_rights[0] = (mode & S_IRUSR) ? 'r' : '-';
     user_rights[1] = (mode & S_IWUSR) ? 'w' : '-';
     user_rights[2] = (mode & S_IXUSR) ? 'x' : '-';
     user_rights[3] = '\0';
 
-    // set permissions for group
+    // Set permissions for group
     group_rights[0] = (mode & S_IRGRP) ? 'r' : '-';
     group_rights[1] = (mode & S_IWGRP) ? 'w' : '-';
     group_rights[2] = (mode & S_IXGRP) ? 'x' : '-';
     group_rights[3] = '\0';
 
-    // set permissions for others
+    // Set permissions for others
     others_rights[0] = (mode & S_IROTH) ? 'r' : '-';
     others_rights[1] = (mode & S_IWOTH) ? 'w' : '-';
     others_rights[2] = (mode & S_IXOTH) ? 'x' : '-';
@@ -289,10 +291,8 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
     struct dirent *entry;
 
     // creez cele doua pipe-uri
-    // pipe1: child1 -> child2
-    // pipe2: child2 -> parent
-    int p1fd[2], p2fd[2];
-    if ((pipe(p1fd) < 0) || (pipe(p2fd) < 0)) {
+    int pipe1[2], pipe2[2];
+    if ((pipe(pipe1) < 0) || (pipe(pipe2) < 0)) {
       perror("Error creating pipes...\n");
       exit(EXIT_FAILURE);
     }
@@ -313,13 +313,14 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
             continue;
         }
 
+        // Creez procesul fiu care scrie fisierele de statistica in functie de tipul fisierului
         int pid = fork();
         if (pid == -1)
         {
             perror("Error forking process: ");
             exit(EXIT_FAILURE);
         }
-        else if (pid == 0) // Proces fiu
+        else if (pid == 0)
         {
             int total_lines_written = 0;
             char outputFileName[1024];
@@ -336,13 +337,14 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
                     printf("Process bmp file...\n");
                     process_BMP_file(filePath, outputFile);
 
+                    // Creez al doilea proces fiu care face conversia imaginilor bmp in imagini alb-negru
                     int grayscale_pid = fork();
                     if (grayscale_pid == -1)
                     {
                         perror("Error forking grayscale process: ");
                         exit(EXIT_FAILURE);
                     }
-                    else if (grayscale_pid == 0) // Grayscale child process
+                    else if (grayscale_pid == 0)
                     {
                         convert_to_grayscale(filePath);
                         exit(EXIT_SUCCESS);
@@ -352,6 +354,35 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
                 {
                     printf("Processing regular file...\n");
                     write_reg_file(filePath, outputFile, &stats);
+                    // Inchid ambele capete ale pipe-ului 2
+                    close(pipe2[0]);
+                    close(pipe2[0]);
+
+                    // Inchid citirea pentru pipe-ul 1
+                    close(pipe1[0]);
+
+                    // Redirectez stdout sa scrie in pipe-ul 1(stdout are file descriptor = 1)
+                    if(dup2(pipe1[1], 1) < 0)
+                    {
+                        perror("Error redirecting stdout: ");
+                        exit(EXIT_FAILURE);
+                    }
+
+                    // Trimit continutul fisierului pe care il iau folosind comanada cat si il trimit pe pipe1
+                    execlp("cat", "cat", filePath, NULL);
+                    
+                    // Creez al doilea proces fiu care executa scriptul sh care face verificarea propozitiilor, dupa ce statistica a fost scrisa de primul fiu
+                    int exec_script_pid = fork();
+                    if(exec_script_pid == -1)
+                    {
+                        perror("Error forking execute script process: ");
+                        exit(EXIT_FAILURE);
+                    }
+                    else if (exec_script_pid == 0)
+                    {
+                        // Inchid scrierea in pipe1
+                        close(pipe1[1]);
+                    }
                 }
             }
             else if (S_ISDIR(stats.st_mode))
@@ -369,7 +400,7 @@ void read_directory_files(const char *dirPath, const char *outputDir, const char
         }
         else if (pid > 0)
         {
-            // Parent process continues to the next iteration
+            // Procesul parinte continua urmatoarea iteratie
             int status;
             waitpid(pid, &status, 0);
             printf("S-a încheiat procesul cu pid-ul %d și codul %d\n\n", pid, WEXITSTATUS(status));
